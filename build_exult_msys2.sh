@@ -25,36 +25,46 @@ make -f Makefile.mingw -j$(nproc)
 echo "=== 4. Compilando Exult Studio ==="
 make -f Makefile.mingw studio -j$(nproc)
 
-echo "=== 5. Compilando las Herramientas (Tools) ==="
+echo "=== 5. Compilando las Herramientas (Tools) y archivos de Datos ==="
 make -f Makefile.mingw tools -j$(nproc)
+# Forzamos la creación de exult.flx a través del propio Makefile
+make -f Makefile.mingw data -j$(nproc) || true
 
 echo "=== 6. Creando estructura de distribución ==="
 OUTPUT_DIR="dist_exult"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/tools"
+mkdir -p "$OUTPUT_DIR/data"
 
-echo "=== 7. Organizando ejecutables ==="
+echo "=== 7. Organizando ejecutables y archivos estáticos (.FLX) ==="
 cp exult.exe "$OUTPUT_DIR/"
 cp exult_studio.exe "$OUTPUT_DIR/"
 
-# Lista completa de las herramientas oficiales
+# Copiar el archivo crítico que te faltaba y los recursos de Exult Studio
+if [ -d "data" ]; then
+    cp data/*.flx "$OUTPUT_DIR/data/" 2>/dev/null || true
+    # Exult Studio necesita su interfaz glade
+    cp mapedit/exult_studio.glade "$OUTPUT_DIR/data/" 2>/dev/null || true
+fi
+
+# Lista completa de las herramientas mapeando todas las carpetas del subdirectorio tools
+find tools/ -maxdepth 2 -type f -name "*.exe" -exec cp {} "$OUTPUT_DIR/tools/" \; 2>/dev/null || true
+# En caso de que se hayan compilado directamente en la raíz de tools sin extensión:
 TOOLS_LIST=(cmanip expack ipack mklink rip shp2pcx splitshp textpack ucc ucxt)
 for tool in "${TOOLS_LIST[@]}"; do
-    if [ -f "tools/$tool.exe" ]; then
-        cp "tools/$tool.exe" "$OUTPUT_DIR/tools/"
+    if [ -f "tools/$tool" ]; then
+        cp "tools/$tool" "$OUTPUT_DIR/tools/$tool.exe"
     fi
 done
 
 echo "=== 8. Escaneando y copiando DLLs dependientes automáticamente ==="
-# ldd busca las rutas de las librerías dinámicas vinculadas a los ejecutables creados
-# Filtramos solo las que pertenecen a la carpeta del entorno /ucrt64/bin
-mapfile -t DLLS < <(ldd "$OUTPUT_DIR"/exult.exe "$OUTPUT_DIR"/exult_studio.exe "$OUTPUT_DIR"/tools/*.exe 2>/dev/null | \
+# ldd busca las rutas de las librerías dinámicas vinculadas a todos los binarios creados
+mapfile -t DLLS < <(ldd "$OUTPUT_DIR"/exult.exe "$OUTPUT_DIR"/exult_studio.exe "$OUTPUT_DIR"/tools/* 2>/dev/null | \
     grep -i '/ucrt64/bin/' | \
     awk '{print $3}' | \
     sort -u)
 
 for dll_path in "${DLLS[@]}"; do
-    # Convertimos la ruta de formato Windows/MSYS a ruta limpia para bash si es necesario
     if [ -f "$dll_path" ]; then
         cp "$dll_path" "$OUTPUT_DIR/"
     fi
